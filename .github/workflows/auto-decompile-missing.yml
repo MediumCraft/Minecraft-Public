@@ -9,6 +9,7 @@ jobs:
     outputs:
       batches: ${{ steps.set-batches.outputs.batches }}
       batch_count: ${{ steps.set-batches.outputs.batch_count }}
+      batch_indices: ${{ steps.set-batches.outputs.batch_indices }}
     steps:
       - name: Fetch all Minecraft versions
         run: |
@@ -39,12 +40,16 @@ jobs:
           batches=$(cat batches.json | jq -c '.')
           echo "batches=$batches" >> $GITHUB_OUTPUT
 
+          # Generate batch indices [0,1,2,...]
+          indices=$(jq -c "[range(0;$batch_count)]")
+          echo "batch_indices=$indices" >> $GITHUB_OUTPUT
+
   decompile-batch:
     needs: get-versions
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        batch_index: ${{ range(0, fromJson(needs.get-versions.outputs.batch_count)) }}
+        batch_index: ${{ fromJson(needs.get-versions.outputs.batch_indices) }}
       max-parallel: 15
     steps:
       - uses: actions/checkout@v4
