@@ -1,0 +1,46 @@
+name: Auto Decompile Missing
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      missing: ${{ steps.set.outputs.missing }}
+    steps:
+      - name: Get all Minecraft versions
+        id: get
+        run: |
+          curl -s https://piston-meta.mojang.com/mc/game/version_manifest.json |
+            jq -r '.versions[].id' | sort -u > all.txt
+
+      - name: Get existing branches from private repo
+        run: |
+          git ls-remote --heads https://x-access-token:${{ secrets.SECRET_PAT }}@github.com/MediumCraft/Minecraft.git |
+            sed 's?.*refs/heads/??' > branches.txt
+
+      - name: Find missing versions
+        id: set
+        run: |
+          missing=$(comm -23 all.txt branches.txt | head -n 10 | jq -R -s -c 'split("\n")[:-1]')
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+
+  decompile:
+    needs: check-versions
+    if: ${{ fromJson(needs.check-versions.outputs.missing) != '' }}
+    strategy:
+      matrix:
+        version: ${{ fromJson(needs.check-versions.outputs.missing) }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout workflow
+        uses: actions/checkout@v4
+
+      - name: Run decompiler
+        run: .github/scripts/decompile.sh "${{ matrix.version }}"
+        env:
+          SECRET_PAT: ${{ secrets.SECRET_PAT }}
+          GIT_NAME: ${{ secrets.GIT_NAME }}
+          GIT_EMAIL: ${{ secrets.GIT_EMAIL }}

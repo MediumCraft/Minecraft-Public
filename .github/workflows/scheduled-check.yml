@@ -1,0 +1,10 @@
+name: Scheduled Decompile Check
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Every Sunday
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    uses: ./.github/workflows/auto-decompile-missing.yml

@@ -1,0 +1,26 @@
+name: Manual Decompile
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: "Comma-separated list of Minecraft versions"
+        required: true
+
+jobs:
+  decompile:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version: ${{ fromJson(format('["{0}"]', join(split(inputs.versions, ','), '","'))) }}
+
+    steps:
+      - name: Checkout workflow
+        uses: actions/checkout@v4
+
+      - name: Run decompiler
+        run: .github/scripts/decompile.sh "${{ matrix.version }}"
+        env:
+          SECRET_PAT: ${{ secrets.SECRET_PAT }}
+          GIT_NAME: ${{ secrets.GIT_NAME }}
+          GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
