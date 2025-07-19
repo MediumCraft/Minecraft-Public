@@ -31,17 +31,13 @@ jobs:
         id: set-batches
         run: |
           missing_versions='${{ steps.find_missing.outputs.missing }}'
-          echo "Raw missing_versions: $missing_versions"  # Debug
-
-          if [ -z "$missing_versions" ] || [ "$missing_versions" = "[]" ]; then
-            echo "No missing versions to process. Exiting."
-            exit 0
-          fi
+          echo "Raw missing_versions: $missing_versions"
 
           BATCH_SIZE=10
-          echo "$missing_versions" | jq -c --argjson size $BATCH_SIZE '
-            [range(0; length; $size) as $start | .[$start:($start + $size)]]
-          ' > batches.json
+          echo "$missing_versions" | jq --argjson size $BATCH_SIZE '
+            [.[] as $item | 
+             range(0; length; $size) as $start | 
+             .[$start:($start + $size)]]' > batches.json
 
           echo "batches.json content:"
           cat batches.json
@@ -52,7 +48,7 @@ jobs:
           batches=$(cat batches.json | jq -c '.')
           echo "batches=$batches" >> $GITHUB_OUTPUT
 
-          indices=$(jq -c "[range(0;$batch_count)]" <<< '[]')
+          indices=$(jq -n "[range(0; $batch_count)]")
           echo "batch_indices=$indices" >> $GITHUB_OUTPUT
           echo "Final indices: $indices"
 
@@ -71,7 +67,7 @@ jobs:
       - name: Run decompile batch
         run: |
           batches='${{ needs.get-versions.outputs.batches }}'
-          versions=$(echo "$batches" | jq -r ".[$(matrix.batch_index)][]")
+          versions=$(echo "$batches" | jq -r ".[${{ matrix.batch_index }}][]")
           echo "Batch ${{ matrix.batch_index }} versions: $versions"
           for version in $versions; do
             echo "Decompiling $version"
