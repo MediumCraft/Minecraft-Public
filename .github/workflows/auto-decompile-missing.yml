@@ -43,6 +43,7 @@ jobs:
           # Generate batch indices [0,1,2,...]
           indices=$(jq -c "[range(0;$batch_count)]")
           echo "batch_indices=$indices" >> $GITHUB_OUTPUT
+          echo "Final indices: $indices"
 
   decompile-batch:
     needs: get-versions
