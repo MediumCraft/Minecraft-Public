@@ -31,17 +31,28 @@ jobs:
         id: set-batches
         run: |
           missing_versions='${{ steps.find_missing.outputs.missing }}'
+          echo "Raw missing_versions: $missing_versions"  # Debug
+
+          if [ -z "$missing_versions" ] || [ "$missing_versions" = "[]" ]; then
+            echo "No missing versions to process. Exiting."
+            exit 0
+          fi
+
           BATCH_SIZE=10
-          jq -nc --argjson arr "$missing_versions" --argjson size $BATCH_SIZE '
-            [range(0; ($arr|length); $size) as $start | $arr[$start:($start + $size)]]
+          echo "$missing_versions" | jq -c --argjson size $BATCH_SIZE '
+            [range(0; length; $size) as $start | .[$start:($start + $size)]]
           ' > batches.json
+
+          echo "batches.json content:"
+          cat batches.json
+
           batch_count=$(jq 'length' batches.json)
           echo "batch_count=$batch_count" >> $GITHUB_OUTPUT
+
           batches=$(cat batches.json | jq -c '.')
           echo "batches=$batches" >> $GITHUB_OUTPUT
 
-          # Generate batch indices [0,1,2,...]
-          indices=$(jq -c "[range(0;$batch_count)]")
+          indices=$(jq -c "[range(0;$batch_count)]" <<< '[]')
           echo "batch_indices=$indices" >> $GITHUB_OUTPUT
           echo "Final indices: $indices"
 
