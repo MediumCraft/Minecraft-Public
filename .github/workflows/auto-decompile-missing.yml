@@ -38,6 +38,9 @@ jobs:
       - name: Checkout workflow
         uses: actions/checkout@v4
 
+      - name: Make script executable
+        run: chmod +x .github/scripts/decompile.sh
+
       - name: Run decompiler
         run: .github/scripts/decompile.sh "${{ matrix.version }}"
         env:
