@@ -1,48 +1,65 @@
-name: Auto Decompile Missing
+name: Auto Decompile Missing Versions
 
 on:
   workflow_dispatch:
 
 jobs:
-  check-versions:
+  get-versions:
     runs-on: ubuntu-latest
     outputs:
-      missing: ${{ steps.set.outputs.missing }}
+      batches: ${{ steps.set-batches.outputs.batches }}
+      batch_count: ${{ steps.set-batches.outputs.batch_count }}
     steps:
-      - name: Get all Minecraft versions
-        id: get
+      - name: Fetch all Minecraft versions
         run: |
-          curl -s https://piston-meta.mojang.com/mc/game/version_manifest.json |
-            jq -r '.versions[].id' | sort -u > all.txt
+          curl -s https://piston-meta.mojang.com/mc/game/version_manifest.json \
+            | jq -r '.versions[].id' | sort -u > all.txt
 
-      - name: Get existing branches from private repo
+      - name: Fetch existing branches
         run: |
-          git ls-remote --heads https://x-access-token:${{ secrets.SECRET_PAT }}@github.com/MediumCraft/Minecraft.git |
-            sed 's?.*refs/heads/??' > branches.txt
+          git ls-remote --heads https://x-access-token:${{ secrets.SECRET_PAT }}@github.com/MediumCraft/Minecraft.git \
+            | sed 's?.*refs/heads/??' | sort -u > branches.txt
 
-      - name: Find missing versions
-        id: set
+      - name: Determine missing versions
+        id: find_missing
         run: |
-          missing=$(comm -23 all.txt branches.txt | head -n 10 | jq -R -s -c 'split("\n")[:-1]')
-          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+          missing=$(comm -23 all.txt branches.txt | jq -R -s -c 'split("\n")[:-1]')
+          echo "missing=$missing" >> $GITHUB_OUTPUT
 
-  decompile:
-    needs: check-versions
-    if: ${{ fromJson(needs.check-versions.outputs.missing) != '' }}
+      - name: Split missing into batches of 10
+        id: set-batches
+        run: |
+          missing_versions='${{ steps.find_missing.outputs.missing }}'
+          BATCH_SIZE=10
+          jq -nc --argjson arr "$missing_versions" --argjson size $BATCH_SIZE '
+            [range(0; ($arr|length); $size) as $start | $arr[$start:($start + $size)]]
+          ' > batches.json
+          batch_count=$(jq 'length' batches.json)
+          echo "batch_count=$batch_count" >> $GITHUB_OUTPUT
+          batches=$(cat batches.json | jq -c '.')
+          echo "batches=$batches" >> $GITHUB_OUTPUT
+
+  decompile-batch:
+    needs: get-versions
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        version: ${{ fromJson(needs.check-versions.outputs.missing) }}
-    runs-on: ubuntu-latest
-
+        batch_index: ${{ range(0, fromJson(needs.get-versions.outputs.batch_count)) }}
+      max-parallel: 15
     steps:
-      - name: Checkout workflow
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Make script executable
-        run: chmod +x .github/scripts/decompile.sh
+      - run: chmod +x .github/scripts/decompile.sh
 
-      - name: Run decompiler
-        run: .github/scripts/decompile.sh "${{ matrix.version }}"
+      - name: Run decompile batch
+        run: |
+          batches='${{ needs.get-versions.outputs.batches }}'
+          versions=$(echo "$batches" | jq -r ".[$(matrix.batch_index)][]")
+          echo "Batch ${{ matrix.batch_index }} versions: $versions"
+          for version in $versions; do
+            echo "Decompiling $version"
+            .github/scripts/decompile.sh "$version"
+          done
         env:
           SECRET_PAT: ${{ secrets.SECRET_PAT }}
           GIT_NAME: ${{ secrets.GIT_NAME }}
