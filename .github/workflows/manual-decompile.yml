@@ -1,4 +1,4 @@
-name: Manual Decompile
+name: Decompile Minecraft
 
 on:
   workflow_dispatch:
@@ -7,60 +7,88 @@ on:
         description: 'Minecraft version (e.g. 1.21.8)'
         required: true
       side:
-        description: 'Side to decompile (CLIENT or SERVER)'
+        description: 'client or server'
         required: true
-        default: 'SERVER'
 
 jobs:
-  decompile-and-push:
+  decompile:
     runs-on: ubuntu-latest
-    env:
-      JAVA_OPTS: -Xmx4G
 
     steps:
-      - name: Checkout public repository
-        uses: actions/checkout@v4
+    - name: Checkout this repository
+      uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: 17
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '21'
 
-      - name: Decompile Minecraft ${{ github.event.inputs.version }} - ${{ github.event.inputs.side }}
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
-          SIDE="${{ github.event.inputs.side }}"
-          SIDE_UPPER=$(echo "$SIDE" | tr '[:lower:]' '[:upper:]')
-          DECOMPILED_DIR="${VERSION}-decompiled"
+    - name: Prepare variables
+      id: prep
+      run: |
+        VERSION="${{ github.event.inputs.version }}"
+        SIDE="${{ github.event.inputs.side }}"
+        SIDE_UPPER=$(echo "$SIDE" | tr '[:lower:]' '[:upper:]')
+        BRANCH="${VERSION}-${SIDE}"
 
-          java -jar MinecraftDecompiler.jar \
-            --version "$VERSION" \
-            --side "$SIDE_UPPER" \
-            --decompile \
-            --output "${VERSION}-remapped.jar" \
-            --decompiled-output "$DECOMPILED_DIR"
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        echo "SIDE=$SIDE" >> $GITHUB_ENV
+        echo "SIDE_UPPER=$SIDE_UPPER" >> $GITHUB_ENV
+        echo "BRANCH=$BRANCH" >> $GITHUB_ENV
 
-      - name: Push to MediumCraft/Minecraft
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
-          SIDE="${{ github.event.inputs.side }}"
-          BRANCH_NAME="${VERSION}-${SIDE,,}"  # e.g. 1.18.1-server
+    - name: Decompile with Mojang mappings
+      run: |
+        java -jar MinecraftDecompiler.jar \
+          --version "$VERSION" \
+          --side "$SIDE_UPPER" \
+          --decompile \
+          --decompiled-output mojang
 
-          git config --global user.email "decompiler@bot.local"
-          git config --global user.name "Minecraft Decompiler Bot"
+    - name: Download Yarn and Intermediary mappings
+      run: |
+        mkdir mappings
+        curl -sL "https://maven.fabricmc.net/net/fabricmc/yarn/$VERSION+build.1/yarn-$VERSION+build.1-v2.jar" -o mappings/yarn.tinyv2
+        curl -sL "https://maven.fabricmc.net/net/fabricmc/intermediary/$VERSION/intermediary-$VERSION-v2.jar" -o mappings/intermediary.tinyv2
 
-          mkdir private-repo
-          cd private-repo
+    - name: Remap to Yarn and Intermediary (placeholder)
+      run: |
+        echo "✅ TODO: Insert remapping logic here using tiny-remapper CLI or Fabric Loom tooling"
+        # You may use https://github.com/FabricMC/tiny-remapper
+        # Example concept:
+        # java -jar tiny-remapper.jar \
+        #   --input mojang \
+        #   --from mappings/yarn.tinyv2 \
+        #   --to yarn
 
-          git init
-          git remote add origin "https://x-access-token:${{ secrets.SECRET_PAT }}@github.com/MediumCraft/Minecraft.git"
-          git fetch origin
+        mkdir yarn
+        mkdir intermediary
+        echo "// placeholder files" > yarn/Placeholder.java
+        echo "// placeholder files" > intermediary/Placeholder.java
 
-          git checkout -B "$BRANCH_NAME"
+    - name: Clone private repo branch
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
 
-          cp -r ../${VERSION}-decompiled/* .
+        git clone https://x-access-token:${{ secrets.SECRET_PAT }}@github.com/MediumCraft/Minecraft.git private-repo
+        cd private-repo
 
-          git add .
-          git commit -m "Decompiled Minecraft $VERSION ($SIDE)"
-          git push -u origin "$BRANCH_NAME" --force
+        # Delete and recreate branch
+        git checkout --orphan "$BRANCH"
+        git rm -rf .
+        cd ..
+
+    - name: Copy decompiled sources into private repo
+      run: |
+        rm -rf private-repo/*
+        cp -r mojang private-repo/mojang
+        cp -r yarn private-repo/yarn
+        cp -r intermediary private-repo/intermediary
+
+    - name: Commit and push
+      run: |
+        cd private-repo
+        git add .
+        git commit -m "Decompiled $VERSION ($SIDE)"
+        git push -f origin "$BRANCH"
