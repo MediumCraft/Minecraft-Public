@@ -3,27 +3,64 @@ name: Manual Decompile
 on:
   workflow_dispatch:
     inputs:
-      versions:
-        description: "Comma-separated list of Minecraft versions"
+      version:
+        description: 'Minecraft version (e.g. 1.21.8)'
         required: true
+      side:
+        description: 'Side to decompile (CLIENT or SERVER)'
+        required: true
+        default: 'SERVER'
 
 jobs:
-  decompile:
+  decompile-and-push:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        version: ${{ fromJson(format('["{0}"]', join(split(inputs.versions, ','), '","'))) }}
+    env:
+      JAVA_OPTS: -Xmx4G
 
     steps:
-      - name: Checkout workflow
+      - name: Checkout public repository
         uses: actions/checkout@v4
 
-      - name: Make script executable
-        run: chmod +x .github/scripts/decompile.sh
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
 
-      - name: Run decompiler
-        run: .github/scripts/decompile.sh "${{ matrix.version }}"
-        env:
-          SECRET_PAT: ${{ secrets.SECRET_PAT }}
-          GIT_NAME: ${{ secrets.GIT_NAME }}
-          GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
+      - name: Decompile Minecraft ${{ github.event.inputs.version }} - ${{ github.event.inputs.side }}
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          SIDE="${{ github.event.inputs.side }}"
+          SIDE_UPPER=$(echo "$SIDE" | tr '[:lower:]' '[:upper:]')
+          DECOMPILED_DIR="${VERSION}-decompiled"
+
+          java -jar MinecraftDecompiler.jar \
+            --version "$VERSION" \
+            --side "$SIDE_UPPER" \
+            --decompile \
+            --output "${VERSION}-remapped.jar" \
+            --decompiled-output "$DECOMPILED_DIR"
+
+      - name: Push to MediumCraft/Minecraft
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          SIDE="${{ github.event.inputs.side }}"
+          BRANCH_NAME="${VERSION}-${SIDE,,}"  # e.g. 1.18.1-server
+
+          git config --global user.email "decompiler@bot.local"
+          git config --global user.name "Minecraft Decompiler Bot"
+
+          mkdir private-repo
+          cd private-repo
+
+          git init
+          git remote add origin "https://x-access-token:${{ secrets.SECRET_PAT }}@github.com/MediumCraft/Minecraft.git"
+          git fetch origin
+
+          git checkout -B "$BRANCH_NAME"
+
+          cp -r ../${VERSION}-decompiled/* .
+
+          git add .
+          git commit -m "Decompiled Minecraft $VERSION ($SIDE)"
+          git push -u origin "$BRANCH_NAME" --force
