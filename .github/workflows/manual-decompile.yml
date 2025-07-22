@@ -45,26 +45,38 @@ jobs:
           --decompile \
           --decompiled-output mojang
 
-    - name: Download Yarn and Intermediary mappings
+    - name: Download and extract Yarn and Intermediary Tiny v2 mappings
       run: |
-        mkdir mappings
-        curl -sL "https://maven.fabricmc.net/net/fabricmc/yarn/$VERSION+build.1/yarn-$VERSION+build.1-v2.jar" -o mappings/yarn.tinyv2
-        curl -sL "https://maven.fabricmc.net/net/fabricmc/intermediary/$VERSION/intermediary-$VERSION-v2.jar" -o mappings/intermediary.tinyv2
+        mkdir -p mappings/yarn mappings/intermediary
+
+        curl -sL "https://maven.fabricmc.net/net/fabricmc/yarn/$VERSION+build.1/yarn-$VERSION+build.1-v2.jar" -o yarn-mappings.jar
+        unzip -p yarn-mappings.jar mappings/mappings.tiny > mappings/yarn.tinyv2
+        rm yarn-mappings.jar
+
+        curl -sL "https://maven.fabricmc.net/net/fabricmc/intermediary/$VERSION/intermediary-$VERSION-v2.jar" -o intermediary-mappings.jar
+        unzip -p intermediary-mappings.jar mappings/mappings.tiny > mappings/intermediary.tinyv2
+        rm intermediary-mappings.jar
 
     - name: Remap to Yarn and Intermediary (placeholder)
       run: |
-        echo "✅ TODO: Insert remapping logic here using tiny-remapper CLI or Fabric Loom tooling"
-        # You may use https://github.com/FabricMC/tiny-remapper
-        # Example concept:
-        # java -jar tiny-remapper.jar \
-        #   --input mojang \
-        #   --from mappings/yarn.tinyv2 \
-        #   --to yarn
+        java -jar MinecraftDecompiler.jar \
+          --version "$VERSION" \
+          --side "$SIDE_UPPER" \
+          --mapping-path mappings/yarn.tinyv2
+          --decompile \
+          --decompiled-output yarn \
+          
+        java -jar MinecraftDecompiler.jar \
+          --version "$VERSION" \
+          --side "$SIDE_UPPER" \
+          --mapping-path mappings/intermediary.tinyv2
+          --decompile \
+          --decompiled-output intermediary \
 
-        mkdir yarn
-        mkdir intermediary
-        echo "// placeholder files" > yarn/Placeholder.java
-        echo "// placeholder files" > intermediary/Placeholder.java
+        #mkdir yarn
+        #mkdir intermediary
+        #echo "// placeholder files" > yarn/Placeholder.java
+        #echo "// placeholder files" > intermediary/Placeholder.java
 
     - name: Clone private repo branch
       run: |
